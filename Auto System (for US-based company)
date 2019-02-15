@@ -1,0 +1,221 @@
+############ Importing libraries ############
+
+import re
+import requests # requesting the webpage
+from bs4 import BeautifulSoup # Scraping the documents from webpage
+import pandas as pd
+import numpy as np
+import os.path # Checking working directory
+from selenium import webdriver # Interacting with webpage
+import time # Give some time to the system to react
+
+############ Checking working directory ############
+
+cwd = os.getcwd() # Checking the current working directory
+cwd
+
+############ Auto Downloading (US-base companies) ############
+
+def US_financial_report():
+    
+    # Creating a folder to save the downloaded financial statements 
+    if not os.path.exists('Financial_Statements'):
+        os.makedirs('Financial_Statements') 
+    
+    tickers = input ("Enter the ticker of the company you want to download (in format ticker1,ticker2,ticker3,etc...): ")
+    tickers = tickers.split(',')
+    
+    ### Getting working directory, will be useful when saving downloaded document to the directory
+    cwd = os.getcwd() # Checking the current working directory
+    cwd = cwd.replace("\\", "/")
+        
+    
+    for ticker in tickers:
+        
+        # Under the Financial_Statements folder, create a folder for the specific company
+        if not os.path.exists('Financial_Statements/{}'.format(ticker)):
+            os.makedirs('Financial_Statements/{}'.format(ticker))
+        
+        link = 'https://www.sec.gov/cgi-bin/browse-edgar?CIK={}&action=getcompany&owner=exclude'.format(ticker)
+
+        r = requests.get(link)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        tag_CIK = soup.find_all('acronym',{'title':"Central Index Key"})[0]
+        CIK_location = tag_CIK.find_next_sibling("a")
+        mixed_CIK = CIK_location.string
+
+        CIK =[s for s in mixed_CIK.split() if s.isnumeric()][0] # Getting CIK number for a company
+        
+        # Move to the annual and quarter report page with the specific CIK number inserted
+        all_annual_url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={}&type=10-K&dateb=&owner=exclude&count=40".format(CIK)
+        all_quarter_url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={}&type=10-Q&dateb=&owner=exclude&count=40".format(CIK)
+      
+        ############# Getting Annual documents ############
+        
+        ### Get the list of interactive page (annual) ###
+        r_annual = requests.get(all_annual_url)
+        soup = BeautifulSoup(r_annual.text,"html.parser")
+        
+        # finding all the URL link that going to interactive data 
+        soup.find_all("a",id = "interactiveDataBtn")
+        
+        # Getting the incomplete interactive page by using beautiful soup.
+        inter_pages_unfinished = []
+        for i in soup.find_all('a',{'id':"interactiveDataBtn"}):
+            page = i.get('href')
+            inter_pages_unfinished.append(page)
+        # Since the interactive page link is incompleted, let's add 'http...' to them and return the completed list of interactive pages.
+        inter_pages = []
+        for each in inter_pages_unfinished:
+            add_on = 'https://www.sec.gov'
+            final = add_on + each
+            inter_pages.append(final)  
+        inter_pages # printing the all annual report interactive format URL
+        
+        long = len(inter_pages) # getting the number of interactive pages
+        
+        ### Getting the list of file type such as 10-K and 10-K/A
+        pull_name = soup.find_all('td',{'nowrap':'nowrap'},text = re.compile('10-K'))
+        doc_types = []
+        for each in pull_name:
+            unwrap = each.string # There are something like <> wraped around the actual number, using '.string' to get the number only
+            a = re.sub(r'\W+', '', unwrap) # This used to remove '/' and '-' in the number, such as '10-K/A', because '/' will return a problem when calling the directory
+            doc_types.append(a)
+        doc_types
+        
+        ### 1st stage
+        ### Building a for loop, in the first stage we will get the fiscal year of the specific report
+        ### and we will judging if its greater than 2014 in the 2nd stage of code.
+        for i in range(0,long):
+            
+            link = inter_pages[i]
+            
+            show_year = re.split('-',link)[2] # getting the 3rd element from the splited string which is year of filing
+            real_year = str(int(show_year)-1)
+            
+            ### 2nd stage
+            ### Only getting the annual financial report that greater or equal to 2014
+            if int(real_year) >= 14:
+                
+                doc_type = doc_types[i] # if the fiscal year of the report is greater or equal to 2014, we get the type of the file
+            
+                # Get the source code of the interactive page for a specific year
+                r = requests.get(link)
+                soup = BeautifulSoup(r.text, "html.parser")
+        
+                # Locating the excel downloading button and get the URL link
+                excel_location = soup.find_all('a',{'class':'xbrlviewer'})[1] # The 2nd tag is the downloading url
+                excel_link_unfinished = excel_location.get('href')
+                excel_link_unfinished
+            
+                # Some modification to the excel link to make it completed
+                add_on = 'https://www.sec.gov'
+                excel_link = add_on + excel_link_unfinished
+                excel_link
+            
+                # Naming the file we want after downloading to the local
+                annual_name = '{}_{}_20{}'.format(ticker,doc_type,real_year)
+            
+                if not os.path.isfile('Financial_Statements/{}/{}.xlsx'.format(ticker,annual_name)):
+                    url = excel_link 
+                    r2 = requests.get(url)
+                    
+                    # tail part of the directory where we want to save the downloaded file
+                    dir_tail = '/Financial_Statements/{}/{}.xlsx'
+                    dir_final = cwd + dir_tail
+                    
+                    with open(dir_final.format(ticker,annual_name), 'wb') as f:  
+                        f.write(r2.content)
+                    print('{} downloaded'.format(annual_name)) 
+            
+                else:
+                    print('{} already exists'.format(annual_name)) 
+
+                    
+        ############# Getting Quarter documents ############
+                    
+        r_quarter = requests.get(all_quarter_url)
+        soup = BeautifulSoup(r_quarter.text,"html.parser")
+        
+        soup.find_all("a",id = "interactiveDataBtn")
+        
+        inter_pages_unfinished = []
+        for i in soup.find_all('a',{'id':"interactiveDataBtn"}):
+            page = i.get('href')
+            inter_pages_unfinished.append(page)
+        # Since the interactive page link is incompleted, let's add 'http...' to them and return the completed list of interactive pages.
+        inter_pages = []
+        for each in inter_pages_unfinished:
+            add_on = 'https://www.sec.gov'
+            final = add_on + each
+            inter_pages.append(final)  
+        inter_pages # printing the all annual report interactive format URL
+        
+        long = len(inter_pages) # getting the number of interactive pages
+        
+        ### Getting the list of file type such as 10-Q and 10-Q/A
+        pull_name = soup.find_all('td',{'nowrap':'nowrap'},text = re.compile('10-Q'))
+        doc_types = []
+        for each in pull_name:
+            unwrap = each.string # There are something like <> wraped around the actual number, using '.string' to get the number only
+            a = re.sub(r'\W+', '', unwrap) # This used to remove '/' and '-' in the number, such as '10-K/A', because '/' will return a problem when calling the directory
+            doc_types.append(a)
+        doc_types
+        
+        ### Getting the list of filing date used to mark document with differet data such as "2018/11/1 mean 3Q report"
+        pull_dates = soup.find_all('td',{'class':'small'})
+        file_dates = []
+        for each in pull_dates:
+            new = each.next_sibling.next_sibling.string #Pulling out next next sibling by using double "next_sibling"
+            new = re.sub(r'\W+', '', new) 
+            file_dates.append(new)       
+        file_dates         
+        
+        for i in range(0,long):
+            
+            link = inter_pages[i]
+            
+            real_year = re.split('-',link)[2] # getting the 3rd element from the splited string which is year of filing
+            
+            if int(real_year) >= 15:
+                
+                doc_type = doc_types[i] # if the fiscal year of the report is greater or equal to 2014, we get the type of the file
+                file_date = file_dates[i]
+                
+                # Get the source code of the interactive page for a specific year
+                r = requests.get(link)
+                soup = BeautifulSoup(r.text, "html.parser")
+                
+                # Locating the excel downloading button and get the URL link
+                excel_location = soup.find_all('a',{'class':'xbrlviewer'})[1] # The 2nd tag is the downloading url
+                excel_link_unfinished = excel_location.get('href')
+                excel_link_unfinished
+            
+                # Some modification to the excel link to make it completed
+                add_on = 'https://www.sec.gov'
+                excel_link = add_on + excel_link_unfinished
+                excel_link
+                
+                # Naming the file we want after downloading to the local
+                quarter_name = '{}_{}_{}'.format(ticker,doc_type,file_date)
+            
+                if not os.path.isfile('Financial_Statements/{}/{}.xlsx'.format(ticker,quarter_name)):
+                    url = excel_link 
+                    r2 = requests.get(url)
+                    
+                    # tail part of the directory where we want to save the downloaded file
+                    dir_tail = '/Financial_Statements/{}/{}.xlsx'
+                    dir_final = cwd + dir_tail
+                    
+                    with open(dir_final.format(ticker,quarter_name), 'wb') as f:  
+                        f.write(r2.content)
+                    print('{} downloaded'.format(quarter_name)) 
+            
+                else:
+                    print('{} already exists'.format(quarter_name))
+                    
+    print('\nProgram Finished')
+
+### Running the program
+US_financial_report()
