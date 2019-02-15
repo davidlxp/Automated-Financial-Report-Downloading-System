@@ -61,7 +61,7 @@ def Get_financial_report():
     
     ### Calling 'get_states_code' function to get the area code of each US states that recorded on SEC offcial website
     
-    get_states_code()
+    states_code = get_states_code()
     
     for ticker in tickers:
         
@@ -349,4 +349,5 @@ Get_financial_report()
 # In this case when substitute TME into URL, will return a error webpage, and return "IndexError: list index out of range"
 # However, TME filed neither annual nor quarter report to SEC yet, so I think that this error only happens when a company 
 # not yet deliver their financial report to SEC.
-
+#
+# Tencent Holding (TCEHY) have the same problem, and TCEHY also doesn't have any financial files that on SEC.com
